@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Claude Code `UserPromptSubmit` hook: record one prompt in `.prompts/`.
+"""Codex `UserPromptSubmit` hook: record one prompt in `.prompts/`.
 
 `prepare-ai-repository` installs a copy of this script into a repository as
-`.claude/hooks/record-prompt.py` and points `.claude/settings.json` at it.
+`.codex/hooks/record-prompt.py` and points `.codex/hooks.json` at it.
 Edit the original bundled with ai-prompt-auto-commit, not the installed copy:
 the copy is overwritten on every run of `prepare-ai-repository`.
 
@@ -10,14 +10,10 @@ The hook payload arrives as JSON on stdin and the prompt is written to
 
     <repo root>/.prompts/<timestamp>_<model>.txt
 
-Two things this script is careful about:
-
-* Only genuine user-authored turns are recorded.  Claude Code also submits
-  machine-injected turns through this hook — task notifications, peer
-  messages, auto-continuation, scheduled wakeups — and those are not prompts.
-* The model name is read out of the session transcript.  There is no model in
-  the hook payload, and guessing produces an attribution record that quietly
-  lies; `unknown` is written instead when it cannot be established.
+Empty prompts and recognized synthetic turns are skipped. Codex supplies the
+active model directly in the hook payload, including on the first prompt and
+after a model switch. An absent or invalid model is recorded as `unknown`;
+the transcript is never used to infer it.
 
 Nothing is ever written to stdout: for `UserPromptSubmit`, stdout is injected
 into the conversation as additional context.  Failures are reported on stderr
@@ -45,15 +41,11 @@ UNKNOWN_MODEL = "unknown"
 
 # A model name goes into a filename, where `_` separates it from the timestamp
 # and `/` would be a directory.  Gateway and proxy setups report ids such as
-# "anthropic/claude-opus-5", so anything outside this set is folded to `-`.
+# "openai/gpt-5.3-codex", so anything outside this set is folded to `-`.
 UNSAFE_IN_FILENAME = re.compile(r"[^A-Za-z0-9.@+-]+")
 
-# `source` names who authored the turn.  `user` is the interactive composer and
-# `sdk` the non-interactive entrypoint (`-p` / Agent SDK); both are the human.
-# Everything else — `system` (task notifications, peer/channel messages,
-# auto-continuation), `loop_wakeup`, `schedule_wakeup`, `poll_event` — is
-# machine-injected.  The field is documented as possibly absent while it rolls
-# out, so a payload without it falls through to the prefix check below.
+# Codex does not currently supply `source`. If present, accept only known
+# human sources; otherwise filter recognized synthetic prefixes below.
 HUMAN_SOURCES = frozenset({"user", "sdk"})
 
 # Machine-injected turns are wrapped in one of these tags.  Belt and braces for
@@ -66,64 +58,6 @@ SYNTHETIC_PREFIXES = (
     "<local-command-caveat>",
     "<system-reminder>",
 )
-
-# Transcripts grow without bound, and this runs on every prompt, so only the
-# tail is read; a full scan is the fallback when the tail holds no answer.
-TAIL_BYTES = 1 << 20
-
-
-def _model_of(line: str) -> str:
-    """Return the model of a transcript line, or "" if it names none."""
-    try:
-        entry = json.loads(line)
-    except ValueError:
-        return ""
-    if not isinstance(entry, dict) or entry.get("type") != "assistant":
-        return ""
-    if entry.get("isSidechain"):
-        return ""  # a subagent's model, not the one answering this prompt
-    message = entry.get("message")
-    model = message.get("model", "") if isinstance(message, dict) else ""
-    if not isinstance(model, str) or model.startswith("<"):
-        return ""  # placeholders such as "<synthetic>"
-    return model
-
-
-def _last_model(lines: list[str]) -> str:
-    for line in reversed(lines):
-        model = _model_of(line)
-        if model:
-            return model
-    return ""
-
-
-def _tail_lines(path: Path) -> list[str]:
-    with path.open("rb") as fh:
-        if path.stat().st_size > TAIL_BYTES:
-            fh.seek(-TAIL_BYTES, 2)
-            fh.readline()  # discard the partial line the seek landed in
-        return fh.read().decode("utf-8", "replace").splitlines()
-
-
-def model_from_transcript(transcript_path: str) -> str:
-    """Return the model of the most recent main-agent turn in the transcript.
-
-    Falls back to `unknown`, which is what the first prompt of a session gets:
-    no assistant has spoken yet.
-    """
-    if not transcript_path:
-        return UNKNOWN_MODEL
-    path = Path(transcript_path)
-    if not path.is_file():
-        return UNKNOWN_MODEL
-    try:
-        model = _last_model(_tail_lines(path))
-        if not model and path.stat().st_size > TAIL_BYTES:
-            model = _last_model(path.read_text(encoding="utf-8", errors="replace").splitlines())
-    except OSError:
-        return UNKNOWN_MODEL  # an unreadable transcript costs the name, not the prompt
-    return _safe_model(model) if model else UNKNOWN_MODEL
-
 
 def _safe_model(model: str) -> str:
     # Leading dots too: a model name must not become a hidden file or "..".
@@ -191,7 +125,8 @@ def record(payload: dict) -> Path | None:
         return None
     prompts_dir = root / PROMPTS_DIRECTORY
     prompts_dir.mkdir(parents=True, exist_ok=True)
-    model = model_from_transcript(payload.get("transcript_path", ""))
+    raw_model = payload.get("model")
+    model = _safe_model(raw_model) if isinstance(raw_model, str) else UNKNOWN_MODEL
     timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     return _write_new(prompts_dir, timestamp, model, payload["prompt"].rstrip("\n") + "\n")
 

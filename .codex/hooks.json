@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo_root=\"$(git rev-parse --show-toplevel 2>/dev/null)\" || exit 0; f=\"$repo_root/.codex/hooks/record-prompt.py\"; [ -f \"$f\" ] && python3 \"$f\"; exit 0",
+            "statusMessage": "Recording prompt with ai-prompt-auto-commit"
+          }
+        ]
+      }
+    ]
+  }
+}

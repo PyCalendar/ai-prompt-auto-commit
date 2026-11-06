@@ -2,8 +2,33 @@
 
 <!-- Note: Adding a version here, also edit README.md pre-commit template. -->
 
-## v0.0.11
+## v0.1.0
 
+- Document the requirement and rationale protected by every test. Exercise
+  non-ASCII input in the locale regression test and document CI-before-tag
+  release verification.
+- Include pre-commit in tox test environments for the development setup tests.
+- Ask AI agents without automatic recording support to point users to the
+  GitHub repository and invite contributions of hooks for their agent/model.
+- Extend the shared assistant guidelines with Codex hook activation reminders.
+  Repository setup links them from a managed block in `AGENTS.md` (or an existing
+  `AGENTS.override.md`) while preserving the project's other agent instructions.
+- Add repository `AGENTS.md` guidance for development, keeping prompt-storage
+  rules in the separate assistant guidelines. Rely on Codex's own hook approval
+  prompt and document manual activation for troubleshooting.
+- Make `make dev` run repository setup directly and report setup failures.
+  Keep the generated Codex recorder available for version control, and print
+  instructions for sharing and trusting the hook in new clones.
+- Add dedicated Codex recorder tests for prompt filtering, malformed payloads,
+  model attribution, directory selection, write failures, and concurrent recording.
+- Organize bundled recorders and hook templates into `data/claude/` and
+  `data/codex/`, with a standalone recording script for each assistant.
+- Document local development setup, test commands, and refreshing installed hooks.
+- Add automatic Codex prompt recording through `UserPromptSubmit` hooks.
+  `prepare-ai-repository` installs `.codex/hooks.json` and the standalone
+  recorder while preserving existing hooks. The active model comes directly
+  from Codex, including on the first prompt and after a model switch.
+  Review and trust the installed hook in Codex's `/hooks` menu to enable it.
 - fix: `.github/assistant-guidelines.md` names the right `date` command.
   It left out the `T`, so a model following it wrote prompt files that do
   not match the documented `YYYY-MM-DDTHH-MM-SS` name.

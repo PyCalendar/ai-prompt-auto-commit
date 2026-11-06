@@ -1,8 +1,7 @@
-"""Tests for the bundled UserPromptSubmit hook script (data/record_prompt.py).
+"""Tests for the bundled UserPromptSubmit hook script (data/claude/record_prompt.py).
 
-The script is installed into a target repository as
-`.claude/hooks/record-prompt.py`, so it is loaded here straight from the
-package data directory rather than imported as a module.
+The scripts in data/claude/ and data/codex/ are installed as standalone files,
+so they are loaded straight from package data rather than imported as modules.
 """
 
 from __future__ import annotations
@@ -20,15 +19,18 @@ import pytest
 from ai_prompt_auto_commit.prepare_repository import HOOK_SCRIPT_DATA, get_data_path
 
 
-@pytest.fixture(scope="module")
-def hook() -> types.ModuleType:
-    """The bundled hook script, loaded as a module."""
-    path = get_data_path(HOOK_SCRIPT_DATA)
-    spec = importlib.util.spec_from_file_location("_record_prompt_under_test", path)
+def _load_hook(assistant: str) -> types.ModuleType:
+    path = get_data_path(f"{assistant}/{HOOK_SCRIPT_DATA}")
+    spec = importlib.util.spec_from_file_location(f"_{assistant}_record_prompt_under_test", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(scope="module")
+def hook() -> types.ModuleType:
+    return _load_hook("claude")
 
 
 def _payload(**overrides: object) -> dict:
@@ -58,15 +60,24 @@ def _assistant(model: str, **extra: object) -> dict:
 
 @pytest.mark.parametrize("source", ["user", "sdk"])
 def test_human_sources_are_recorded(hook, source: str) -> None:
+    """The audit trail must include real requests from both interactive users and the
+    SDK entrypoint.
+    """
     assert hook.should_record(_payload(source=source))
 
 
 @pytest.mark.parametrize("source", ["system", "loop_wakeup", "schedule_wakeup", "poll_event"])
 def test_machine_injected_sources_are_dropped(hook, source: str) -> None:
+    """Scheduled wakeups and background messages must not be attributed to the human
+    contributor in commit history.
+    """
     assert not hook.should_record(_payload(source=source))
 
 
 def test_missing_source_defaults_to_recording(hook) -> None:
+    """Older payloads may omit source metadata, and that rollout difference must not
+    cause genuine requests to disappear.
+    """
     payload = _payload()
     del payload["source"]
     assert hook.should_record(payload)
@@ -80,6 +91,9 @@ def test_missing_source_defaults_to_recording(hook) -> None:
     "<system-reminder>background context</system-reminder>",
 ])
 def test_synthetic_turns_dropped_even_without_source(hook, prompt: str) -> None:
+    """Recognizable machine wrappers must remain excluded when older hook payloads lack
+    explicit authorship metadata.
+    """
     payload = _payload(prompt=prompt)
     del payload["source"]
     assert not hook.should_record(payload)
@@ -87,10 +101,16 @@ def test_synthetic_turns_dropped_even_without_source(hook, prompt: str) -> None:
 
 @pytest.mark.parametrize("prompt", ["", "   \n  "])
 def test_empty_prompt_is_dropped(hook, prompt: str) -> None:
+    """Whitespace-only input carries no user request and must not create a misleading
+    audit record.
+    """
     assert not hook.should_record(_payload(prompt=prompt))
 
 
 def test_slash_command_is_a_real_prompt(hook) -> None:
+    """A contributor's slash command is intentional input and must not be discarded as
+    a synthetic notification.
+    """
     assert hook.should_record(_payload(prompt="/review-and-push"))
 
 
@@ -99,6 +119,9 @@ def test_slash_command_is_a_real_prompt(hook) -> None:
 # ---------------------------------------------------------------------------
 
 def test_model_is_last_assistant_model(hook, tmp_path: Path) -> None:
+    """Claude attribution must follow the latest available assistant evidence instead
+    of an obsolete or hardcoded model.
+    """
     t = _transcript(tmp_path / "t.jsonl", [
         {"type": "user", "message": {"content": "hi"}},
         _assistant("claude-sonnet-4-6"),
@@ -108,7 +131,9 @@ def test_model_is_last_assistant_model(hook, tmp_path: Path) -> None:
 
 
 def test_sidechain_model_is_ignored(hook, tmp_path: Path) -> None:
-    """A subagent's model must not be attributed to the user's prompt."""
+    """A subagent's model must never replace the main agent's model in the
+    contributor's attribution record.
+    """
     t = _transcript(tmp_path / "t.jsonl", [
         _assistant("claude-opus-5"),
         _assistant("claude-haiku-4-5-20251001", isSidechain=True),
@@ -117,6 +142,9 @@ def test_sidechain_model_is_ignored(hook, tmp_path: Path) -> None:
 
 
 def test_synthetic_model_is_ignored(hook, tmp_path: Path) -> None:
+    """Synthetic transcript placeholders are not real model evidence and must not
+    corrupt attribution.
+    """
     t = _transcript(tmp_path / "t.jsonl", [
         _assistant("claude-opus-5"),
         _assistant("<synthetic>"),
@@ -125,6 +153,9 @@ def test_synthetic_model_is_ignored(hook, tmp_path: Path) -> None:
 
 
 def test_malformed_lines_are_tolerated(hook, tmp_path: Path) -> None:
+    """A partially written or malformed transcript line must not prevent using
+    otherwise valid model evidence.
+    """
     t = tmp_path / "t.jsonl"
     t.write_text('not json\n{"type": "assistant", "message": {"model": "m-1"}}\n{\n', encoding="utf-8")
     assert hook.model_from_transcript(str(t)) == "m-1"
@@ -132,11 +163,16 @@ def test_malformed_lines_are_tolerated(hook, tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("path", ["", "/nonexistent/transcript.jsonl"])
 def test_unreadable_transcript_yields_unknown(hook, path: str) -> None:
+    """Missing transcript evidence must produce honest unknown attribution rather than
+    a guessed model or a lost request.
+    """
     assert hook.model_from_transcript(path) == hook.UNKNOWN_MODEL
 
 
 def test_transcript_without_assistant_turns_yields_unknown(hook, tmp_path: Path) -> None:
-    """The first prompt of a session: no assistant has spoken yet."""
+    """Claude has no model evidence before its first answer, so the first request must
+    be attributed honestly as unknown.
+    """
     t = _transcript(tmp_path / "t.jsonl", [
         {"type": "mode", "mode": "normal"},
         {"type": "user", "message": {"content": "hi"}},
@@ -145,7 +181,9 @@ def test_transcript_without_assistant_turns_yields_unknown(hook, tmp_path: Path)
 
 
 def test_model_found_beyond_the_tail_window(hook, tmp_path: Path) -> None:
-    """Only the tail is read normally; a far-away model must still be found."""
+    """Large tool outputs must not erase the model evidence needed for attribution
+    merely because the recorder optimizes normal reads to a tail window.
+    """
     padding = [{"type": "user", "message": {"content": "x" * 4096}}] * 512
     t = _transcript(tmp_path / "t.jsonl", [_assistant("claude-opus-5")] + padding)
     assert t.stat().st_size > hook.TAIL_BYTES
@@ -157,6 +195,9 @@ def test_model_found_beyond_the_tail_window(hook, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_prompt_written_with_model_from_transcript(hook, tmp_path: Path) -> None:
+    """A recorded request must preserve the human's text and associate it with the
+    model established by Claude's transcript.
+    """
     t = _transcript(tmp_path / "t.jsonl", [_assistant("claude-opus-5")])
     dest = hook.record(_payload(cwd=str(tmp_path), transcript_path=str(t)))
     assert dest is not None
@@ -166,11 +207,17 @@ def test_prompt_written_with_model_from_transcript(hook, tmp_path: Path) -> None
 
 
 def test_machine_injected_turn_writes_nothing(hook, tmp_path: Path) -> None:
+    """Filtering must prevent actual audit-file creation for machine messages, not
+    merely classify them without enforcing the decision.
+    """
     assert hook.record(_payload(cwd=str(tmp_path), source="system")) is None
     assert not (tmp_path / ".prompts").exists()
 
 
 def test_second_prompt_in_the_same_second_is_not_overwritten(hook, tmp_path: Path) -> None:
+    """Fast consecutive requests must all survive in the audit queue instead of
+    overwriting a timestamp collision.
+    """
     payload = _payload(cwd=str(tmp_path))
     first = hook.record(payload)
     second = hook.record(dict(payload, prompt="and now?"))
@@ -183,9 +230,9 @@ def test_second_prompt_in_the_same_second_is_not_overwritten(hook, tmp_path: Pat
 # main() — the actual hook contract: JSON on stdin, nothing on stdout
 # ---------------------------------------------------------------------------
 
-def _run_hook(payload: dict, cwd: Path) -> subprocess.CompletedProcess:
+def _run_hook(payload: dict, cwd: Path, assistant: str = "claude") -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, str(get_data_path(HOOK_SCRIPT_DATA))],
+        [sys.executable, str(get_data_path(f"{assistant}/{HOOK_SCRIPT_DATA}"))],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -193,17 +240,24 @@ def _run_hook(payload: dict, cwd: Path) -> subprocess.CompletedProcess:
     )
 
 
-def test_hook_writes_nothing_to_stdout(tmp_path: Path) -> None:
-    """UserPromptSubmit stdout is injected into the prompt as context."""
-    result = _run_hook(_payload(cwd=str(tmp_path)), tmp_path)
+@pytest.mark.parametrize("assistant", ["claude", "codex"])
+def test_hook_writes_nothing_to_stdout(tmp_path: Path, assistant: str) -> None:
+    """Hook stdout becomes extra conversation context, so recording must remain silent
+    while still saving the request.
+    """
+    result = _run_hook(_payload(cwd=str(tmp_path)), tmp_path, assistant)
     assert result.stdout == ""
     assert result.returncode == 0
     assert len(list((tmp_path / ".prompts").glob("*.txt"))) == 1
 
 
-def test_hook_survives_garbage_on_stdin(tmp_path: Path) -> None:
+@pytest.mark.parametrize("assistant", ["claude", "codex"])
+def test_hook_survives_garbage_on_stdin(tmp_path: Path, assistant: str) -> None:
+    """Malformed hook input must not reject a user request or inject accidental context
+    into the assistant's conversation.
+    """
     result = subprocess.run(
-        [sys.executable, str(get_data_path(HOOK_SCRIPT_DATA))],
+        [sys.executable, str(get_data_path(f"{assistant}/{HOOK_SCRIPT_DATA}"))],
         input="not json at all",
         capture_output=True,
         text=True,
@@ -218,9 +272,9 @@ def test_hook_survives_garbage_on_stdin(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_hook_command_exits_zero_when_the_script_is_missing(tmp_path: Path) -> None:
-    """Claude Code erases the prompt on exit 2, which python3 returns for a
-    missing file. A repository whose script was never installed must degrade
-    to not recording, not to swallowing what the user typed."""
+    """An absent recorder must not erase the user's request: Python exits 2 for a
+    missing script, which Claude treats as a blocked prompt.
+    """
     from ai_prompt_auto_commit.prepare_repository import get_default_claude_settings
 
     command = get_default_claude_settings()["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
@@ -236,6 +290,9 @@ def test_hook_command_exits_zero_when_the_script_is_missing(tmp_path: Path) -> N
 
 
 def test_unreadable_transcript_yields_unknown_not_a_crash(hook, tmp_path: Path) -> None:
+    """Filesystem permissions can deny model evidence, and that must degrade
+    attribution rather than crash prompt recording.
+    """
     t = _transcript(tmp_path / "t.jsonl", [_assistant("claude-opus-5")])
     t.chmod(0o000)
     try:
@@ -245,6 +302,9 @@ def test_unreadable_transcript_yields_unknown_not_a_crash(hook, tmp_path: Path) 
 
 
 def test_prompt_still_recorded_when_the_transcript_is_unreadable(hook, tmp_path: Path) -> None:
+    """A permission failure while discovering the model must not lose the contributor's
+    request; unknown attribution preserves the audit entry.
+    """
     t = _transcript(tmp_path / "t.jsonl", [_assistant("claude-opus-5")])
     t.chmod(0o000)
     try:
@@ -254,13 +314,16 @@ def test_prompt_still_recorded_when_the_transcript_is_unreadable(hook, tmp_path:
     assert dest is not None and dest.name.endswith(f"_{hook.UNKNOWN_MODEL}.txt")
 
 
-def test_non_utf8_locale_still_records_the_prompt(tmp_path: Path) -> None:
-    """The payload is always UTF-8 JSON; the locale must not get a say."""
+@pytest.mark.parametrize("assistant", ["claude", "codex"])
+def test_non_utf8_locale_still_records_the_prompt(tmp_path: Path, assistant: str) -> None:
+    """The hook's JSON wire format is UTF-8, so a contributor's locale must not corrupt
+    non-ASCII request text.
+    """
     env = dict(os.environ, LC_ALL="C", LANG="C", PYTHONIOENCODING="", PYTHONUTF8="0")
     env.pop("PYTHONIOENCODING")
     result = subprocess.run(
-        [sys.executable, str(get_data_path(HOOK_SCRIPT_DATA))],
-        input=json.dumps(_payload(prompt="hvorfor feiler kalenderoppslaget?"), ensure_ascii=False).encode("utf-8"),
+        [sys.executable, str(get_data_path(f"{assistant}/{HOOK_SCRIPT_DATA}"))],
+        input=json.dumps(_payload(prompt="hvorfor feiler kalenderoppslaget for Tromsø?"), ensure_ascii=False).encode("utf-8"),
         capture_output=True,
         cwd=tmp_path,
         env=env,
@@ -268,7 +331,7 @@ def test_non_utf8_locale_still_records_the_prompt(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     written = list((tmp_path / ".prompts").glob("*.txt"))
     assert len(written) == 1
-    assert written[0].read_text(encoding="utf-8") == "hvorfor feiler kalenderoppslaget?\n"
+    assert written[0].read_text(encoding="utf-8") == "hvorfor feiler kalenderoppslaget for Tromsø?\n"
 
 
 @pytest.mark.parametrize("model, expected", [
@@ -277,6 +340,9 @@ def test_non_utf8_locale_still_records_the_prompt(tmp_path: Path) -> None:
     ("../../escape", "escape"),
 ])
 def test_model_name_is_made_safe_for_a_filename(hook, tmp_path: Path, model: str, expected: str) -> None:
+    """Model identifiers must not escape the prompt directory or break the
+    timestamp/model filename delimiter used by commit attribution.
+    """
     t = _transcript(tmp_path / "t.jsonl", [_assistant(model)])
     dest = hook.record(_payload(cwd=str(tmp_path), transcript_path=str(t)))
     assert dest is not None
@@ -285,9 +351,9 @@ def test_model_name_is_made_safe_for_a_filename(hook, tmp_path: Path, model: str
 
 
 def test_missing_cwd_records_nowhere_at_all(hook, tmp_path: Path) -> None:
-    """Not merely "does not create the missing tree": falling back to the
-    process cwd files the prompt under whatever repository the hook happened
-    to be run from."""
+    """If the session's directory was deleted, the recorder must not guess another
+    checkout and file the user's request under the wrong project.
+    """
     gone = tmp_path / "deleted" / "deeply"
     before = sorted(Path.cwd().rglob(".prompts/*.txt"))
     assert hook.record(_payload(cwd=str(gone))) is None

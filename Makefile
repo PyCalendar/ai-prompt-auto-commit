@@ -7,7 +7,7 @@
 .PHONY: dev
 dev: .venv/.installed
 	.venv/bin/pre-commit install
-	PATH="$(CURDIR)/.venv/bin:$(PATH)" .venv/bin/pre-commit run --hook-stage manual prepare-ai-repository || true
+	.venv/bin/prepare-ai-repository
 
 .PHONY: test
 test: .venv/.installed

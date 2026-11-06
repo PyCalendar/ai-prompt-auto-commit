@@ -1,6 +1,6 @@
 - id: prepare-ai-repository
   name: Prepare repository for AI prompt recording
-  description: Creates .prompts/, updates .gitignore, and installs the Claude Code UserPromptSubmit hook into .claude/settings.json.
+  description: Creates .prompts/, updates .gitignore and agent guidelines, and installs Claude Code and Codex prompt-recording hooks.
   language: python
   entry: prepare-ai-repository
   stages: [manual]
@@ -16,7 +16,7 @@
 
 - id: append-ai-prompts
   name: Append AI prompts to commit message
-  description: Appends all pending .prompts/*.md files to the commit message, stripping the repo root from paths.
+  description: Appends pending .prompts/*.md and .prompts/*.txt files to the commit message, stripping the repo root from paths.
   language: python
   entry: append-ai-prompts
   stages: [prepare-commit-msg]
@@ -24,7 +24,7 @@
 
 - id: archive-ai-prompts
   name: Archive AI prompts
-  description: Moves pending .prompts/*.md files to .prompts/committed/ after a successful commit, tagged with the commit hash.
+  description: Moves pending .prompts/*.md and .prompts/*.txt files to .prompts/committed/ after a successful commit, tagged with the commit hash.
   language: python
   entry: archive-ai-prompts
   stages: [post-commit]

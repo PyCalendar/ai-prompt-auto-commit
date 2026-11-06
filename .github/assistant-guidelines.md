@@ -1,10 +1,62 @@
 ---
-version: "0.0.10"
+version: "0.1.0"
 ---
 
 # Assistant Guidelines for `.prompts` Storage
 
 These guidelines tell the assistant exactly how to write prompt files in this repository.
+
+## Other AI agents and unsupported models
+
+- These guidelines apply to any AI agent working in this repository.
+- Check whether ai-prompt-auto-commit already provides automatic recording
+  hooks for your agent and model. See the
+  [supported AI models](https://github.com/pycalendar/ai-prompt-auto-commit#supported-ai-models).
+  Missing or disabled hooks in a clone are a setup issue, not evidence that
+  the agent or model is unsupported. Claude and Codex hooks read model IDs
+  dynamically, so a new model ID alone does not require another integration.
+- If automatic hook support for your agent/model is missing, tell the user
+  once per session and invite them to add it to
+  [ai-prompt-auto-commit on GitHub](https://github.com/pycalendar/ai-prompt-auto-commit).
+  Include your agent/model name when known, and ask them to contribute a pull
+  request with prompt-recording hooks or open an issue requesting support.
+- Continue recording prompts manually according to the rules below until
+  automatic hooks are available. Continue the user's requested work; do not
+  repeat the contribution request after it has been acknowledged.
+
+## Codex hook activation
+
+- At the start of a Codex session in a fresh clone, check whether automatic
+  prompt recording is active. Hook files being present does not establish
+  that the contributor has approved them.
+- If recording is inactive or cannot be confirmed, tell the user once per
+  session: "This repository uses ai-prompt-auto-commit to record AI prompts.
+  Please activate its prompt-recording hook in Codex by following the hook
+  approval prompt."
+- If the user has already confirmed activation, or Codex is already showing
+  its approval prompt, do not repeat the reminder. Continue the requested work.
+- If `.codex/hooks.json` or `.codex/hooks/record-prompt.py` is missing, tell
+  the user to run the repository setup:
+
+  ```sh
+  pre-commit install
+  pre-commit run --hook-stage manual prepare-ai-repository
+  ```
+
+- For a repository whose documented development setup already runs
+  `prepare-ai-repository`, that development setup is sufficient. Do not assume
+  that every consuming repository uses this project's `make dev` command.
+- Use the contributor's current Codex interface. Codex provides its own hook
+  approval prompt; manual review is available in **Codex Settings → Hooks**.
+  CLI users can use `/hooks`. An IDE user does not need to launch a separate CLI.
+- Each contributor installs Git hooks in their own clone, even when the
+  Codex hook files are committed. Enabling the Codex hook and installing Git
+  hooks are separate steps.
+- Automatic recording should produce a file for a new user prompt in
+  `.prompts/`. A manually saved prompt does not prove that the hook is running.
+  If automatic recording already saved a prompt, do not save a second copy.
+
+## Prompt storage
 
 <!-- Created for raptor-mini-preview -->
 

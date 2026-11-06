@@ -24,10 +24,12 @@ def fake_git_hash(monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------------------
 
 def test_returns_zero_when_no_files(repo: Path, fake_git_hash) -> None:
+    """The post-commit hook must succeed for commits with no pending AI prompts."""
     assert archive() == 0
 
 
 def test_does_not_create_committed_dir_when_no_files(repo: Path, prompts_dir: Path, fake_git_hash) -> None:
+    """A commit without AI prompts must not create an unnecessary prompt archive."""
     archive()
     assert not (prompts_dir / "committed").exists()
 
@@ -37,6 +39,9 @@ def test_does_not_create_committed_dir_when_no_files(repo: Path, prompts_dir: Pa
 # ---------------------------------------------------------------------------
 
 def test_moves_md_file_to_committed(repo: Path, prompts_dir: Path, committed_dir: Path, fake_git_hash) -> None:
+    """Legacy Markdown prompts must be tied to their commit and removed from the
+    pending queue so later commits cannot reuse them.
+    """
     f = prompts_dir / "2026-04-17T10-00-00_claude-sonnet-4-6.md"
     f.write_text("prompt\n")
     archive()
@@ -49,6 +54,9 @@ def test_moves_md_file_to_committed(repo: Path, prompts_dir: Path, committed_dir
 # ---------------------------------------------------------------------------
 
 def test_moves_txt_file_to_committed(repo: Path, prompts_dir: Path, committed_dir: Path, fake_git_hash) -> None:
+    """Automatically recorded text prompts must be tied to their commit and removed
+    from the pending queue to prevent repeated attribution.
+    """
     f = prompts_dir / "2026-04-17T10-00-00_gpt-4o.txt"
     f.write_text("prompt\n")
     archive()
@@ -61,6 +69,9 @@ def test_moves_txt_file_to_committed(repo: Path, prompts_dir: Path, committed_di
 # ---------------------------------------------------------------------------
 
 def test_moves_both_md_and_txt(repo: Path, prompts_dir: Path, committed_dir: Path, fake_git_hash) -> None:
+    """Repositories can contain both prompt formats, and committing one format must not
+    leave the other pending for reuse.
+    """
     md = prompts_dir / "2026-04-17T09-00-00_model-a.md"
     txt = prompts_dir / "2026-04-17T10-00-00_model-b.txt"
     md.write_text("a\n")
@@ -73,6 +84,9 @@ def test_moves_both_md_and_txt(repo: Path, prompts_dir: Path, committed_dir: Pat
 
 
 def test_preserves_file_content(repo: Path, prompts_dir: Path, committed_dir: Path, fake_git_hash) -> None:
+    """Archiving is an audit operation, so it must preserve the original request
+    without rewriting or losing its text.
+    """
     f = prompts_dir / "2026-04-17T10-00-00_my-model.txt"
     f.write_text("my prompt text\n")
     archive()
@@ -81,5 +95,8 @@ def test_preserves_file_content(repo: Path, prompts_dir: Path, committed_dir: Pa
 
 
 def test_returns_zero_on_success(repo: Path, prompts_dir: Path, fake_git_hash) -> None:
+    """Successful prompt archiving must satisfy Git's zero-exit hook contract after the
+    commit has been created.
+    """
     (prompts_dir / "2026-04-17T10-00-00_model.txt").write_text("x\n")
     assert archive() == 0

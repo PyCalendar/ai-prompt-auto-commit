@@ -23,6 +23,16 @@ version: "{PACKAGE_VERSION}"
 
 """
 
+AGENTS_REFERENCE_START = "<!-- ai-prompt-auto-commit: start -->"
+AGENTS_REFERENCE_END = "<!-- ai-prompt-auto-commit: end -->"
+AGENTS_REFERENCE = f"""{AGENTS_REFERENCE_START}
+## AI prompt recording
+
+At the start of a session, read [.github/assistant-guidelines.md](.github/assistant-guidelines.md).
+Follow its instructions for reminding contributors to activate prompt-recording
+hooks and for storing prompts without duplicates.
+{AGENTS_REFERENCE_END}"""
+
 # The UserPromptSubmit hook script, bundled as package data and installed into
 # the target repository.  It cannot import this package — the console scripts
 # live in pre-commit's isolated cache venv, which is not on the assistant's
@@ -40,15 +50,19 @@ def get_data(file_name: str) -> str:
     return get_data_path(file_name).read_text(encoding="utf-8")
 
 def get_default_claude_settings() -> dict:
-    """Return the bundled claude_settings.json with the package version injected into the hook."""
-    ref = get_data("claude_settings.json")
+    """Return claude/claude_settings.json with the package version injected into the hook."""
+    ref = get_data("claude/claude_settings.json")
     settings = json.loads(ref)
     settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["version"] = PACKAGE_VERSION
     return settings
 
-def get_default_hook_script() -> str:
-    """Return the bundled hook script with the package version injected."""
-    content = get_data(HOOK_SCRIPT_DATA)
+def get_default_codex_hooks() -> dict:
+    """Return the bundled Codex hooks.json configuration."""
+    return json.loads(get_data("codex/codex_hooks.json"))
+
+def get_default_hook_script(assistant: str = "claude") -> str:
+    """Return the assistant's bundled recorder with the package version injected."""
+    content = get_data(f"{assistant}/{HOOK_SCRIPT_DATA}")
     return re.sub(
         HOOK_VERSION_PATTERN,
         f'HOOK_VERSION = "{PACKAGE_VERSION}"',
@@ -64,9 +78,59 @@ def get_default_assistant_guidelines() -> str:
     # more of them on every run.
     return ASSISTANT_GUIDELINES_HEADER + content.lstrip("\n")
 
+def _install_agents_reference(repo_root: Path) -> None:
+    """Link the shared guidelines from Codex's active project instructions."""
+    override = repo_root / "AGENTS.override.md"
+    dest = override if override.is_file() else repo_root / "AGENTS.md"
+    existing = dest.read_text(encoding="utf-8") if dest.exists() else ""
+    pattern = re.compile(
+        re.escape(AGENTS_REFERENCE_START) + r".*?" + re.escape(AGENTS_REFERENCE_END),
+        re.DOTALL,
+    )
+    if pattern.search(existing):
+        content = pattern.sub(lambda _: AGENTS_REFERENCE, existing, count=1)
+    else:
+        separator = "" if not existing or existing.endswith("\n\n") else (
+            "\n" if existing.endswith("\n") else "\n\n"
+        )
+        content = existing + separator + AGENTS_REFERENCE + "\n"
+    if content != existing:
+        dest.write_text(content, encoding="utf-8")
+    print(f"Created or updated assistant-guidelines reference in {dest}")
+
+def _install_prompt_hook(
+    dest_file: Path, defaults: dict, identity_key: str, assistant: str
+) -> None:
+    """Install the standalone recorder and merge only this package's handler."""
+    hook_def = defaults["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+    identity = hook_def[identity_key]
+
+    hooks_dest = dest_file.parent / "hooks"
+    hooks_dest.mkdir(parents=True, exist_ok=True)
+    script_file = hooks_dest / HOOK_SCRIPT_FILENAME
+    script_file.write_text(get_default_hook_script(assistant), encoding="utf-8")
+    script_file.chmod(0o755)
+    print(f"Created or updated {script_file}")
+
+    settings = json.loads(dest_file.read_text(encoding="utf-8")) if dest_file.exists() else {}
+    matchers = settings.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
+    already_installed = False
+    for matcher in matchers:
+        hooks_list = matcher.get("hooks", [])
+        for i, hook in enumerate(hooks_list):
+            if hook.get(identity_key) == identity:
+                hooks_list[i] = hook_def
+                already_installed = True
+    if not already_installed:
+        # Keep our handler in its own matcher group so another hook's matcher
+        # or group metadata cannot constrain prompt recording.
+        matchers.append({"hooks": [hook_def]})
+    dest_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    print(f"Created or updated prompt recording hook in {dest_file}")
+
 def prepare_repository(
     prompts_directory:str = PROMPTS_DIRECTORY,) -> int:
-    """Set up .prompts/, and .claude/settings.json in the target repo."""
+    """Set up .prompts/ and the Claude Code and Codex hooks in the target repo."""
     repo_root = common._repo_root()
 
     # Create PROMPTS_DIRECTORY
@@ -79,6 +143,7 @@ def prepare_repository(
     guidelines_file = github_dir / "assistant-guidelines.md"
     guidelines_file.write_text(get_default_assistant_guidelines(), encoding="utf-8")
     print(f"Created or updated {guidelines_file}")
+    _install_agents_reference(repo_root)
 
     # Add .prompts/ to the root .gitignore
     root_gitignore = repo_root / ".gitignore"
@@ -94,48 +159,21 @@ def prepare_repository(
     else:
         print(f"{root_gitignore} already contains '{pattern}'")
 
-    # Install the UserPromptSubmit hook into .claude/settings.json
-    bundled = get_default_claude_settings()
-    hook_def = bundled["hooks"]["UserPromptSubmit"][0]["hooks"][0]
-    hook_id = hook_def["id"]
-    package_version = hook_def["version"]
-
-    claude_dest = repo_root / ".claude"
-    dest_file = claude_dest / "settings.json"
-
-    # Install the hook script the settings above point at.  Always rewritten,
-    # so an outdated copy cannot survive an upgrade.
-    hooks_dest = claude_dest / "hooks"
-    hooks_dest.mkdir(parents=True, exist_ok=True)
-    script_file = hooks_dest / HOOK_SCRIPT_FILENAME
-    script_file.write_text(get_default_hook_script(), encoding="utf-8")
-    script_file.chmod(0o755)
-    print(f"Created or updated {script_file}")
-
-    settings = json.loads(dest_file.read_text(encoding="utf-8")) if dest_file.exists() else {}
-
-    matchers = settings.setdefault("hooks", {}).setdefault("UserPromptSubmit", [])
-    already_installed = any(
-        h.get("id") == hook_id
-        for matcher in matchers
-        for h in matcher.get("hooks", [])
+    _install_prompt_hook(
+        repo_root / ".claude" / "settings.json", get_default_claude_settings(), "id", "claude"
     )
-    if already_installed:
-        for matcher in matchers:
-            hooks_list = matcher.get("hooks", [])
-            for i, h in enumerate(hooks_list):
-                if h.get("id") == hook_id:
-                    hooks_list[i] = hook_def
-        print(f"Updated hook '{hook_id}' to version {package_version} in {dest_file}")
-    else:
-        if matchers:
-            matchers[0].setdefault("hooks", []).append(hook_def)
-        else:
-            matchers.append({"hooks": [hook_def]})
-        print(f"Inserted hook '{hook_id}' into {dest_file}")
-
-    claude_dest.mkdir(parents=True, exist_ok=True)
-    dest_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    # Codex documents statusMessage, but not Claude's custom id/version keys.
+    # Use our stable status message to recognize the handler on upgrades;
+    # each installed script carries the package version.
+    _install_prompt_hook(
+        repo_root / ".codex" / "hooks.json", get_default_codex_hooks(), "statusMessage", "codex"
+    )
+    print(
+        "Codex prompt recording is configured. Commit .codex/hooks.json and "
+        ".codex/hooks/record-prompt.py so other clones can discover the hook. "
+        "Each contributor should trust the project and review the hook with "
+        "/hooks in Codex CLI."
+    )
 
     # Ensure prepare-commit-msg and post-commit hooks are installed.
     # Derive them from the existing pre-commit hook file by swapping --hook-type.

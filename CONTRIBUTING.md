@@ -1,7 +1,7 @@
 # Contribution Guide
 
 To get started with development,
-[read the documentation](README.md).
+[follow the local development setup](README.md#local-development).
 
 ## Maintainers
 

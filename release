@@ -63,7 +63,7 @@ def main() -> None:
     )
 
     # data files
-    # claude_settings.json - "version": "0.0.8"
+    # claude/claude_settings.json - "version": "0.0.8"
     replace_in_file(
         CLAUDE_SETTINGS,
         r'"version"\s*:\s*"[\d.]+"',
@@ -91,7 +91,7 @@ def main() -> None:
 
     # copy data files
     print("  Updating bundled data files...")
-    shutil.copyfile(CLAUDE_SETTINGS, DATA / "claude_settings.json")
+    shutil.copyfile(CLAUDE_SETTINGS, DATA / "claude" / "claude_settings.json")
     shutil.copyfile(ASSISTANT_GUIDELINES, DATA / "assistant-guidelines.md")
 
     # tag and push only when the working tree is clean
