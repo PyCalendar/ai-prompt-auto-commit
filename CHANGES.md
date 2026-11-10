@@ -4,6 +4,8 @@
 
 ## v0.1.0
 
+- Restrict package discovery so the REUSE `LICENSES/` directory does not break
+  installation with setuptools.
 - Remove the Codex IDE context wrapper before recording prompts so stored
   prompt files contain the human request used in commit messages.
 - Keep SPDX metadata out of generated agent instructions; use a license

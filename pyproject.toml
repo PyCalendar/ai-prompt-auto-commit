@@ -27,3 +27,6 @@ dev = [
 
 [tool.setuptools.package-data]
 ai_prompt_auto_commit = ["data/*", "data/claude/*", "data/codex/*"]
+
+[tool.setuptools.packages.find]
+include = ["ai_prompt_auto_commit*"]
