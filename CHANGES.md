@@ -2,7 +2,7 @@
 
 <!-- Note: Adding a version here, also edit README.md pre-commit template. -->
 
-## v0.1.0
+## v0.2.0
 
 - Restrict package discovery so the REUSE `LICENSES/` directory does not break
   installation with setuptools.
@@ -20,6 +20,9 @@
   projects: include SPDX notices, configuration sidecars, and the GPL text.
 - Add REUSE licensing metadata and the GPL-3.0-only license text, document
   contributor requirements, and check compliance in pre-commit and CI.
+
+## v0.1.0
+
 - Document the requirement and rationale protected by every test. Exercise
   non-ASCII input in the locale regression test and document CI-before-tag
   release verification.

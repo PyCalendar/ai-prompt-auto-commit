@@ -1,11 +1,12 @@
+---
+version: "0.2.0"
+---
+
 <!--
 SPDX-FileCopyrightText: ai-prompt-auto-commit contributors
 SPDX-License-Identifier: GPL-3.0-only
 -->
 
----
-version: "0.1.0"
----
 
 # Assistant Guidelines for `.prompts` Storage
 

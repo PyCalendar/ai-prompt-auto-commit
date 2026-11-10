@@ -36,7 +36,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-HOOK_VERSION = "0.1.0"  # replaced with the package version at install time
+HOOK_VERSION = "0.2.0"  # replaced with the package version at install time
 
 PROMPTS_DIRECTORY = ".prompts"
 FILE_EXTENSION = ".txt"
