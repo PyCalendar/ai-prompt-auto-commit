@@ -29,6 +29,15 @@ Contributors
 - can submit pull requests
 - can work on branches inside the repository
 
+## Licensing
+
+Keep new files compliant with [REUSE](https://reuse.software/spec/).
+Project-owned files inherit the GPL-3.0-only metadata in `REUSE.toml`.
+For third-party files, preserve their copyright and license notices, add
+file-specific SPDX annotations (or a `.license` sidecar), and include any
+additional license texts in `LICENSES/`. Do not replace third-party attribution
+with the project default. Run `.venv/bin/reuse lint` before submitting changes.
+
 ## Merge requirements
 
 - Passing tests

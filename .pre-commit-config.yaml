@@ -18,6 +18,15 @@ repos:
 
   - repo: local
     hooks:
+      - id: reuse-lint
+        name: Check REUSE compliance
+        language: python
+        entry: reuse lint
+        additional_dependencies: ["reuse>=5"]
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
       - id: prepare-ai-repository
         name: Prepare repository for AI prompt recording
         language: script

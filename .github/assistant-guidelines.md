@@ -2,6 +2,12 @@
 version: "0.1.0"
 ---
 
+<!--
+SPDX-FileCopyrightText: ai-prompt-auto-commit contributors
+SPDX-License-Identifier: GPL-3.0-only
+-->
+
+
 # Assistant Guidelines for `.prompts` Storage
 
 These guidelines tell the assistant exactly how to write prompt files in this repository.

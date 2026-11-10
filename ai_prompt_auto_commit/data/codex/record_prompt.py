@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: ai-prompt-auto-commit contributors
+# SPDX-License-Identifier: GPL-3.0-only
+
 """Codex `UserPromptSubmit` hook: record one prompt in `.prompts/`.
 
 `prepare-ai-repository` installs a copy of this script into a repository as

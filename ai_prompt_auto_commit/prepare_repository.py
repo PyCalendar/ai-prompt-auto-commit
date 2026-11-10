@@ -78,7 +78,7 @@ def get_default_assistant_guidelines() -> str:
     # more of them on every run.
     return ASSISTANT_GUIDELINES_HEADER + content.lstrip("\n")
 
-def _install_agents_reference(repo_root: Path) -> None:
+def _install_agents_reference(repo_root: Path, *, install_licenses: bool = False) -> None:
     """Link the shared guidelines from Codex's active project instructions."""
     override = repo_root / "AGENTS.override.md"
     dest = override if override.is_file() else repo_root / "AGENTS.md"
@@ -96,10 +96,26 @@ def _install_agents_reference(repo_root: Path) -> None:
         content = existing + separator + AGENTS_REFERENCE + "\n"
     if content != existing:
         dest.write_text(content, encoding="utf-8")
+    if install_licenses:
+        _install_license_sidecar(dest)
     print(f"Created or updated assistant-guidelines reference in {dest}")
 
+def _install_license_sidecar(dest_file: Path) -> None:
+    """Attribute our contribution without discarding a shared file's notices."""
+    sidecar = dest_file.with_name(dest_file.name + ".license")
+    existing = sidecar.read_text(encoding="utf-8") if sidecar.exists() else ""
+    notice = (
+        "SPDX-FileCopyrightText: ai-prompt-auto-commit contributors\n"
+        "SPDX-" "License-Identifier: GPL-3.0-only\n"
+    )
+    if notice not in existing:
+        separator = "" if not existing or existing.endswith("\n") else "\n"
+        sidecar.write_text(existing + separator + notice, encoding="utf-8")
+
+
 def _install_prompt_hook(
-    dest_file: Path, defaults: dict, identity_key: str, assistant: str
+    dest_file: Path, defaults: dict, identity_key: str, assistant: str,
+    *, install_licenses: bool = False,
 ) -> None:
     """Install the standalone recorder and merge only this package's handler."""
     hook_def = defaults["hooks"]["UserPromptSubmit"][0]["hooks"][0]
@@ -126,12 +142,28 @@ def _install_prompt_hook(
         # or group metadata cannot constrain prompt recording.
         matchers.append({"hooks": [hook_def]})
     dest_file.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    if install_licenses:
+        _install_license_sidecar(dest_file)
     print(f"Created or updated prompt recording hook in {dest_file}")
 
 def prepare_repository(
     prompts_directory:str = PROMPTS_DIRECTORY,) -> int:
     """Set up .prompts/ and the Claude Code and Codex hooks in the target repo."""
     repo_root = common._repo_root()
+
+    # Detect opt-in before setup creates any licensing files itself.
+    uses_reuse = (
+        (repo_root / "REUSE.toml").is_file()
+        or (repo_root / ".reuse" / "dep5").is_file()
+        or (repo_root / "LICENSES").is_dir()
+    )
+    if uses_reuse:
+        # Preserve a consuming project's existing copy of the license.
+        licenses_dir = repo_root / "LICENSES"
+        licenses_dir.mkdir(parents=True, exist_ok=True)
+        license_file = licenses_dir / "GPL-3.0-only.txt"
+        if not license_file.exists():
+            license_file.write_text(get_data("GPL-3.0-only.txt"), encoding="utf-8")
 
     # Create PROMPTS_DIRECTORY
     prompts_dir = repo_root / prompts_directory
@@ -143,7 +175,7 @@ def prepare_repository(
     guidelines_file = github_dir / "assistant-guidelines.md"
     guidelines_file.write_text(get_default_assistant_guidelines(), encoding="utf-8")
     print(f"Created or updated {guidelines_file}")
-    _install_agents_reference(repo_root)
+    _install_agents_reference(repo_root, install_licenses=uses_reuse)
 
     # Add .prompts/ to the root .gitignore
     root_gitignore = repo_root / ".gitignore"
@@ -159,14 +191,19 @@ def prepare_repository(
     else:
         print(f"{root_gitignore} already contains '{pattern}'")
 
+    if uses_reuse:
+        _install_license_sidecar(root_gitignore)
+
     _install_prompt_hook(
-        repo_root / ".claude" / "settings.json", get_default_claude_settings(), "id", "claude"
+        repo_root / ".claude" / "settings.json", get_default_claude_settings(), "id", "claude",
+        install_licenses=uses_reuse,
     )
     # Codex documents statusMessage, but not Claude's custom id/version keys.
     # Use our stable status message to recognize the handler on upgrades;
     # each installed script carries the package version.
     _install_prompt_hook(
-        repo_root / ".codex" / "hooks.json", get_default_codex_hooks(), "statusMessage", "codex"
+        repo_root / ".codex" / "hooks.json", get_default_codex_hooks(), "statusMessage", "codex",
+        install_licenses=uses_reuse,
     )
     print(
         "Codex prompt recording is configured. Commit .codex/hooks.json and "

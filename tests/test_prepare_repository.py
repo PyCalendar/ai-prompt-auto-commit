@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -540,3 +541,143 @@ def test_codex_hook_and_script_refreshed_on_upgrade(repo: Path) -> None:
         other_handler, *_codex_handlers(get_default_codex_hooks())
     ]
     assert script.read_text(encoding="utf-8") == get_default_hook_script("codex")
+
+
+@pytest.mark.parametrize("repeat", [False, True])
+def test_generated_repository_is_reuse_compliant(
+    repo: Path, repeat: bool, tmp_path: Path
+) -> None:
+    """Copied assets must carry complete licensing without our root REUSE.toml,
+    including after repeated setup, upgrades, and cloning committed artifacts.
+    """
+    (repo / "REUSE.toml").write_text("version = 1\n", encoding="utf-8")
+    prepare_repository()
+    if repeat:
+        prepare_repository()
+    result = subprocess.run(
+        [sys.executable, "-m", "reuse", "--no-multiprocessing", "lint"],
+        cwd=repo, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    # Validate the committed artifacts, excluding ignored local files, as a
+    # contributor receives them without running setup or installing this package.
+    subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com",
+         "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "Install hooks"],
+        cwd=repo, check=True,
+    )
+    clone = tmp_path / "reuse clone"
+    subprocess.run(["git", "clone", "--quiet", str(repo), str(clone)], check=True)
+    result = subprocess.run(
+        [sys.executable, "-m", "reuse", "--no-multiprocessing", "lint"],
+        cwd=clone, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_setup_preserves_existing_licensing(repo: Path) -> None:
+    """Installing into a shared project must retain sidecar notices and license
+    texts, and must not accumulate attribution on repeated setup.
+    """
+    (repo / "REUSE.toml").write_text("version = 1\n", encoding="utf-8")
+    prepare_repository()
+    sidecar = repo / ".codex" / "hooks.json.license"
+    original = (
+        "SPDX-FileCopyrightText: Example contributors\n"
+        "SPDX-" "License-Identifier: MIT\n"
+    )
+    sidecar.write_text(original, encoding="utf-8")
+    license_file = repo / "LICENSES" / "GPL-3.0-only.txt"
+    license_text = license_file.read_bytes()
+    prepare_repository()
+    installed = sidecar.read_text(encoding="utf-8")
+    assert installed.startswith(original)
+    assert "SPDX-" "License-Identifier: GPL-3.0-only" in installed
+    prepare_repository()
+    assert sidecar.read_text(encoding="utf-8") == installed
+    assert license_file.read_bytes() == license_text
+
+
+@pytest.mark.parametrize("marker", [None, "REUSE.toml", ".reuse/dep5", "LICENSES"])
+def test_additional_licenses_require_reuse(repo: Path, marker: str | None) -> None:
+    """Ordinary repositories must not receive extra licensing files, while each
+    supported REUSE layout must acquire them on initial and repeated setup.
+    """
+    if marker:
+        path = repo / marker
+        if marker == "LICENSES":
+            path.mkdir()
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
+    for _ in range(2):
+        prepare_repository()
+        assert (repo / "LICENSES" / "GPL-3.0-only.txt").exists() == bool(marker)
+        for relative in (
+            "AGENTS.md.license", ".gitignore.license",
+            ".claude/settings.json.license", ".codex/hooks.json.license"
+        ):
+            assert (repo / relative).exists() == bool(marker)
+    assert (repo / ".codex/hooks/record-prompt.py").is_file()
+
+
+@pytest.mark.parametrize("relative", [
+    ".claude/settings.json.license",
+    ".codex/hooks.json.license",
+    ".gitignore.license",
+    ".claude/hooks/record-prompt.py",
+    ".codex/hooks/record-prompt.py",
+    ".github/assistant-guidelines.md",
+    "AGENTS.md.license",
+])
+def test_reuse_defaults_do_not_mask_missing_generated_notices(
+    repo: Path, relative: str
+) -> None:
+    """Our repository annotations must never hide lost licensing on copied assets,
+    so removing a generated notice must make the real REUSE configuration fail.
+    """
+    config = Path(__file__).resolve().parents[1] / "REUSE.toml"
+    (repo / "REUSE.toml").write_bytes(config.read_bytes())
+    prepare_repository()
+    command = [sys.executable, "-m", "reuse", "--no-multiprocessing", "lint"]
+    baseline = subprocess.run(command, cwd=repo, capture_output=True, text=True)
+    assert baseline.returncode == 0, baseline.stdout + baseline.stderr
+    target = repo / relative
+    if relative.endswith(".license"):
+        target.unlink()
+    else:
+        target.write_text(
+            "\n".join(line for line in target.read_text(encoding="utf-8").splitlines()
+                      if "SPDX-" not in line) + "\n",
+            encoding="utf-8",
+        )
+    result = subprocess.run(command, cwd=repo, capture_output=True, text=True)
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert relative.removesuffix(".license") in result.stdout
+
+
+@pytest.mark.parametrize("override", [False, True])
+@pytest.mark.parametrize("reuse", [False, True])
+def test_agents_licensing_stays_outside_instructions(
+    repo: Path, override: bool, reuse: bool
+) -> None:
+    """Agent instructions must stay free of generated SPDX comments, with licensing
+    placed beside the active instructions only when the project uses REUSE.
+    """
+    dest = repo / ("AGENTS.override.md" if override else "AGENTS.md")
+    if override:
+        dest.write_text("# Project override\n", encoding="utf-8")
+    if reuse:
+        (repo / "REUSE.toml").write_text("version = 1\n", encoding="utf-8")
+    prepare_repository()
+    assert "SPDX-" not in dest.read_text(encoding="utf-8")
+    sidecar = dest.with_name(dest.name + ".license")
+    assert sidecar.exists() == reuse
+    if reuse:
+        assert "GPL-3.0-only" in sidecar.read_text(encoding="utf-8")
+    before = dest.read_bytes()
+    prepare_repository()
+    assert dest.read_bytes() == before

@@ -1,0 +1,31 @@
+version = 1
+
+# Only files maintained here receive default metadata. Generated assets
+# (.claude/, .codex/, guidelines, AGENTS.md, and .gitignore) must carry their
+# own notices or sidecars so missing metadata is caught by reuse lint.
+[[annotations]]
+path = [
+    "REUSE.toml",
+    "README.md",
+    "CONTRIBUTING.md",
+    "CHANGES.md",
+    "Makefile",
+    "pyproject.toml",
+    "tox.ini",
+    "install.sh",
+    "release",
+    "pre-commit",
+    "post-commit",
+    "prepare-commit-msg",
+    ".pre-commit-config.yaml",
+    ".pre-commit-hooks.yaml",
+    ".github/workflows/**",
+    "ai_prompt_auto_commit/*.py",
+    "ai_prompt_auto_commit/data/GPL-3.0-only.txt",
+    "ai_prompt_auto_commit/data/claude/claude_settings.json",
+    "ai_prompt_auto_commit/data/codex/codex_hooks.json",
+    "tests/**",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = "ai-prompt-auto-commit contributors"
+SPDX-License-Identifier = "GPL-3.0-only"

@@ -4,6 +4,18 @@
 
 ## v0.1.0
 
+- Keep SPDX metadata out of generated agent instructions; use a license
+  sidecar for the active AGENTS file in REUSE projects instead.
+- Run REUSE lint in a separate CI job and require both REUSE and the test
+  matrix to pass before publishing a GitHub release.
+- Exclude generated assets from default REUSE annotations and verify that
+  removing their own licensing notices makes compliance checks fail.
+- Only install additional license texts and sidecars in consuming repositories
+  that already use REUSE (`REUSE.toml`, `.reuse/dep5`, or `LICENSES/`).
+- Preserve REUSE metadata after repository setup copies assets into consuming
+  projects: include SPDX notices, configuration sidecars, and the GPL text.
+- Add REUSE licensing metadata and the GPL-3.0-only license text, document
+  contributor requirements, and check compliance in pre-commit and CI.
 - Document the requirement and rationale protected by every test. Exercise
   non-ASCII input in the locale regression test and document CI-before-tag
   release verification.

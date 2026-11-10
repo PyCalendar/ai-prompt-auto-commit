@@ -22,6 +22,7 @@ dev = [
     "pre-commit",
     "tox",
     "pytest",
+    "reuse>=5",
 ]
 
 [tool.setuptools.package-data]

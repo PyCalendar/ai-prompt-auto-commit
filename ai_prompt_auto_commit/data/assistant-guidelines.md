@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: ai-prompt-auto-commit contributors
+SPDX-License-Identifier: GPL-3.0-only
+-->
+
 ---
 version: "0.1.0"
 ---
