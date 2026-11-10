@@ -288,3 +288,38 @@ def test_concurrent_prompts_in_same_second_preserve_every_prompt(
         f"prompt {index}\n" for index in range(8)
     ]
     assert existing.read_text(encoding="utf-8") == "previous session\n"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_ide_wrapper_cleaned_before_storage(tmp_path: Path, newline: str) -> None:
+    """The standalone Codex recorder must store the human request without IDE
+    metadata so prompt files and commit entries contain the same request.
+    """
+    raw = newline.join([
+        "# Context from my IDE setup:", "", "## Active file: README.md", "",
+        "## Open tabs:", "- README.md: README.md", "", "## My request:",
+        "fix the parser", "and add regression coverage", "",
+    ])
+    result = _run_script(json.dumps(_payload(tmp_path, prompt=raw)), tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == ""
+    files = list((tmp_path / ".prompts").glob("*.txt"))
+    assert len(files) == 1
+    assert files[0].read_text(encoding="utf-8") == (
+        "fix the parser\nand add regression coverage\n"
+    )
+
+
+@pytest.mark.parametrize("raw", [
+    "Explain this heading:\n## My request:\nkeep this text",
+    "# Context from my IDE setup:\nNo request delimiter here",
+    "# Context from my IDE setup:\n\n## My request:\n",
+    "Keep this example:\n# Context from my IDE setup:\n\n## My request:\nexample",
+])
+def test_cleanup_preserves_unrecognized_prompts(codex_hook, tmp_path: Path, raw: str) -> None:
+    """Cleanup must not discard human text resembling an IDE wrapper or remove
+    context when no actual request can be recovered.
+    """
+    dest = codex_hook.record(_payload(tmp_path, prompt=raw))
+    assert dest is not None
+    assert dest.read_text(encoding="utf-8") == raw.rstrip("\n") + "\n"

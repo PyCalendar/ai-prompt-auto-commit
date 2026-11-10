@@ -67,6 +67,16 @@ def _safe_model(model: str) -> str:
     return UNSAFE_IN_FILENAME.sub("-", model).strip("-.") or UNKNOWN_MODEL
 
 
+def clean_prompt(raw: str) -> str:
+    """Extract the human request from Codex's known IDE context wrapper."""
+    normalized = raw.replace("\r\n", "\n")
+    if normalized.startswith("# Context from my IDE setup:\n"):
+        _, separator, request = normalized.partition("\n## My request:\n")
+        if separator and request.strip():
+            return request.strip()
+    return raw
+
+
 def should_record(payload: dict) -> bool:
     """True when the payload carries a prompt the human actually wrote."""
     source = payload.get("source")
@@ -131,7 +141,7 @@ def record(payload: dict) -> Path | None:
     raw_model = payload.get("model")
     model = _safe_model(raw_model) if isinstance(raw_model, str) else UNKNOWN_MODEL
     timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    return _write_new(prompts_dir, timestamp, model, payload["prompt"].rstrip("\n") + "\n")
+    return _write_new(prompts_dir, timestamp, model, clean_prompt(payload["prompt"]).rstrip("\n") + "\n")
 
 
 def main() -> int:

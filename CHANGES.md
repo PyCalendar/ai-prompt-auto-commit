@@ -4,6 +4,8 @@
 
 ## v0.1.0
 
+- Remove the Codex IDE context wrapper before recording prompts so stored
+  prompt files contain the human request used in commit messages.
 - Keep SPDX metadata out of generated agent instructions; use a license
   sidecar for the active AGENTS file in REUSE projects instead.
 - Run REUSE lint in a separate CI job and require both REUSE and the test
