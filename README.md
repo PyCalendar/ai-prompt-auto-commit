@@ -42,7 +42,7 @@ default_install_hook_types: [pre-commit, prepare-commit-msg, post-commit]
 
 repos:
   - repo: https://github.com/pycalendar/ai-prompt-auto-commit
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: prepare-ai-repository
       - id: unstage-ai-prompts
@@ -94,6 +94,10 @@ discover the hook and prompt them to review it.
 Each contributor still needs to run `pre-commit install` for the Git hooks.
 
 ## Updating
+
+The pre-commit hook checks that the installed Claude and Codex recorders and
+their configuration match its version. If they are missing or out of date, the
+commit fails with the command to refresh them.
 
 To update the hooks:
 

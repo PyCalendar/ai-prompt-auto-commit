@@ -2,6 +2,11 @@
 
 <!-- Note: Adding a version here, also edit README.md pre-commit template. -->
 
+## v0.2.1
+
+- Stop commits when installed prompt recorders or their configuration do not match
+  the current hook version, with instructions to refresh setup.
+
 ## v0.2.0
 
 - Restrict package discovery so the REUSE `LICENSES/` directory does not break
